@@ -5,8 +5,40 @@ from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 import requests
 
-st.set_page_config(page_title="📈 3% Move Predictor + Option Chain", layout="wide")
+st.set_page_config(page_title="📈 3% Move Predictor + Option Chain + Telegram", layout="wide")
 
+# === CONFIGURE YOUR TELEGRAM BOT HERE ===
+BOT_TOKEN = "PASTE_YOUR_BOT_TOKEN_HERE"
+CHAT_ID = "PASTE_YOUR_CHAT_ID_HERE"
+
+
+# === Telegram Alert Function ===
+def send_telegram_alert(stock_info):
+    if not BOT_TOKEN or not CHAT_ID:
+        return
+
+    message = (
+        f"🚨 *Stock Alert: {stock_info['Symbol']}*\n"
+        f"💰 Price: ₹{stock_info['Last Price']}\n"
+        f"📈 RSI: {stock_info['RSI']}\n"
+        f"📊 % Change: {stock_info['% Change']}%\n"
+        f"📦 Volume Spike: {stock_info['Volume Spike']}x\n"
+        f"🧠 Score: {stock_info['Score']} / 4"
+    )
+
+    url = f"https://api.telegram.org/bot{8154012655:AAGk2Czczh7uIIKXVJv1m_0V4uqHf0wlY}/sendMessage"
+    payload = {"7488960267": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        response = requests.post(url, data=payload)
+        if response.status_code == 200:
+            print(f"✅ Telegram alert sent for {stock_info['Symbol']}")
+        else:
+            print("❌ Telegram error:", response.text)
+    except Exception as e:
+        print("❌ Exception in Telegram:", e)
+
+
+# === Stock List ===
 @st.cache_data(ttl=86400)
 def get_nifty_100_symbols():
     return [
@@ -22,12 +54,14 @@ def get_nifty_100_symbols():
         "DABUR", "BIOCON", "LUPIN", "TRENT", "COLPAL", "DMART", "TORNTPHARM"
     ]
 
+
 def fetch_price_data(symbol):
     try:
         df = yf.download(symbol, period="10d", interval="1d", progress=False)
         return df if not df.empty else None
     except:
         return None
+
 
 def fetch_option_chain(symbol):
     headers = {
@@ -43,6 +77,7 @@ def fetch_option_chain(symbol):
         return data.get("records", {}).get("data", [])
     except Exception:
         return []
+
 
 def parse_oi_greeks(chain_data):
     calls, puts = [], []
@@ -66,6 +101,7 @@ def parse_oi_greeks(chain_data):
                 "Delta": pe.get("greeks", {}).get("delta", "N/A")
             })
     return pd.DataFrame(calls), pd.DataFrame(puts)
+
 
 def analyze_stock(df):
     if df is None or len(df) < 6:
@@ -113,22 +149,22 @@ def analyze_stock(df):
         "Score": score
     } if score >= 3 else None
 
+
 # === Streamlit App ===
-st.title("📊 NSE Screener — 3% Move Predictor + Option Chain")
-st.caption("Filter: Volume > 2× avg, RSI > 55, Price > prev high & EMA5")
+st.title("📊 NSE Screener — 3% Move Predictor + Option Chain + Telegram Alerts")
+st.caption("Alerts: Volume > 2× avg, RSI > 55, Price > Prev High & EMA5")
 
 symbols = [s + ".NS" for s in get_nifty_100_symbols()]
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):  # Limit to 50 symbols
+for i, symbol in enumerate(symbols[:50]):  # Limit for performance
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
-        results.append({
-            "Symbol": symbol.replace(".NS", ""),
-            **result
-        })
+        result["Symbol"] = symbol.replace(".NS", "")
+        results.append(result)
+        send_telegram_alert(result)
     progress.progress((i + 1) / 50)
 
 if results:
@@ -137,7 +173,6 @@ if results:
     st.success(f"✅ {len(df_final)} stocks found")
     st.dataframe(df_final, use_container_width=True)
 
-    # Show Option Chain for each stock
     st.markdown("## 🔍 Option Chain Snapshots")
     for row in df_final.itertuples(index=False):
         sym = row.Symbol
