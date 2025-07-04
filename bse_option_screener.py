@@ -5,9 +5,8 @@ from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 import requests
 
-st.set_page_config(page_title="📈 3% Move Predictor + Options", layout="wide")
+st.set_page_config(page_title="📈 3% Move Predictor + Option Chain", layout="wide")
 
-# Load NIFTY 100
 @st.cache_data(ttl=86400)
 def get_nifty_100_symbols():
     return [
@@ -23,7 +22,6 @@ def get_nifty_100_symbols():
         "DABUR", "BIOCON", "LUPIN", "TRENT", "COLPAL", "DMART", "TORNTPHARM"
     ]
 
-# Fetch EOD data
 def fetch_price_data(symbol):
     try:
         df = yf.download(symbol, period="10d", interval="1d", progress=False)
@@ -31,7 +29,6 @@ def fetch_price_data(symbol):
     except:
         return None
 
-# Fetch option chain from NSE
 def fetch_option_chain(symbol):
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -44,10 +41,9 @@ def fetch_option_chain(symbol):
         response = session.get(url, headers=headers)
         data = response.json()
         return data.get("records", {}).get("data", [])
-    except Exception as e:
+    except Exception:
         return []
 
-# Parse option chain
 def parse_oi_greeks(chain_data):
     calls, puts = [], []
     for entry in chain_data:
@@ -71,26 +67,35 @@ def parse_oi_greeks(chain_data):
             })
     return pd.DataFrame(calls), pd.DataFrame(puts)
 
-# Analyze stock
 def analyze_stock(df):
     if df is None or len(df) < 6:
         return None
 
-    close = df["Close"].dropna()
-    volume = df["Volume"].dropna()
-    if len(close) < 6 or len(volume) < 6:
+    close = df.get("Close", pd.Series(dtype=float)).dropna()
+    volume = df.get("Volume", pd.Series(dtype=float)).dropna()
+
+    if len(close) < 15 or len(volume) < 6:
         return None
 
-    rsi = RSIIndicator(close, window=14).rsi().iloc[-1]
-    ema5 = EMAIndicator(close, window=5).ema_indicator().iloc[-1]
+    try:
+        rsi = RSIIndicator(close, window=14).rsi().dropna().iloc[-1]
+    except:
+        return None
 
-    today_close = close.iloc[-1]
-    prev_close = close.iloc[-2]
-    prev_high = df["High"].iloc[-2]
-    today_vol = volume.iloc[-1]
-    avg_vol = volume[-6:-1].mean()
+    try:
+        ema5 = EMAIndicator(close, window=5).ema_indicator().iloc[-1]
+    except:
+        return None
 
-    # Conditions
+    try:
+        today_close = close.iloc[-1]
+        prev_close = close.iloc[-2]
+        prev_high = df["High"].iloc[-2]
+        today_vol = volume.iloc[-1]
+        avg_vol = volume[-6:-1].mean()
+    except:
+        return None
+
     price_breakout = today_close > prev_high
     vol_spike = today_vol > 2 * avg_vol
     rsi_bullish = rsi > 55
@@ -116,7 +121,7 @@ symbols = [s + ".NS" for s in get_nifty_100_symbols()]
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):  # Limit for performance
+for i, symbol in enumerate(symbols[:50]):  # Limit to 50 symbols
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
@@ -132,7 +137,7 @@ if results:
     st.success(f"✅ {len(df_final)} stocks found")
     st.dataframe(df_final, use_container_width=True)
 
-    # Show Option Chain per stock
+    # Show Option Chain for each stock
     st.markdown("## 🔍 Option Chain Snapshots")
     for row in df_final.itertuples(index=False):
         sym = row.Symbol
