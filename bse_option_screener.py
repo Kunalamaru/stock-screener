@@ -8,7 +8,7 @@ from ta.momentum import RSIIndicator
 from modules.option_chain import fetch_option_chain, parse_oi_greeks
 
 st.set_page_config(page_title="📈 Volume Spike + RSI Chart", layout="wide")
-REFRESH_INTERVAL = 5
+REFRESH_INTERVAL = 30
 
 @st.cache_data(ttl=3600)
 def get_all_nse_stocks():
