@@ -8,7 +8,7 @@ from ta.momentum import RSIIndicator
 from modules.option_chain import fetch_option_chain, parse_oi_greeks
 
 st.set_page_config(page_title="📈 Volume Spike + RSI Screener", layout="wide")
-REFRESH_INTERVAL = 5
+REFRESH_INTERVAL = 30  # refresh every 30 seconds
 
 @st.cache_data(ttl=86400)
 def get_all_nse_stocks():
@@ -36,20 +36,20 @@ def fetch_price_data(ticker):
 def analyze_stock(df):
     if df is None or len(df) < 20:
         return False
-    if "Close" not in df:
+
+    close = df.get("Close", pd.Series(dtype=float)).dropna()
+    volume = df.get("Volume", pd.Series(dtype=float)).dropna()
+
+    if len(close) < 15 or len(volume) < 15:
         return False
-    if df["Close"].isna().all():
-        return False
-    close = df["Close"].dropna()
-    if len(close) < 15:
-        return False
-    volume = df["Volume"]
-    avg_vol_10d = volume.rolling(window=10).mean()
-    vol_spike = volume.iloc[-1] > 1.5 * avg_vol_10d.iloc[-1]
+
     try:
+        avg_vol_10d = volume.rolling(window=10).mean()
+        vol_spike = volume.iloc[-1] > 1.2 * avg_vol_10d.iloc[-1]  # Only 20% higher now
         rsi = RSIIndicator(close, window=14).rsi().iloc[-1]
-    except:
+    except Exception:
         return False
+
     if vol_spike:
         return {
             "Last Price": close.iloc[-1],
@@ -63,14 +63,14 @@ def analyze_stock(df):
 
 # UI
 st.title("📊 NSE Screener — Volume Spike + RSI Ranking")
-st.caption("Live data via Yahoo Finance | Top NIFTY 100 stocks")
-st.markdown("🔁 Auto-refreshes every 5 seconds")
+st.caption("Volume spike: > 20% above 10-day avg | Refreshes every 30 seconds")
+st.markdown("🔁 Now scanning 50 top NSE stocks...")
 
 symbols = get_all_nse_stocks()
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):  # Limit to 50 per run
+for i, symbol in enumerate(symbols[:50]):  # Scan 50 stocks for performance
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
@@ -113,5 +113,6 @@ st.dataframe(calls_df.sort_values("OI", ascending=False).head(10))
 st.markdown("#### 📉 Put Options")
 st.dataframe(puts_df.sort_values("OI", ascending=False).head(10))
 
+# Auto-refresh
 time.sleep(REFRESH_INTERVAL)
 st.experimental_rerun()
