@@ -36,7 +36,9 @@ def fetch_price_data(ticker):
 def analyze_stock(df):
     if df is None or len(df) < 20:
         return False
-    if "Close" not in df or df["Close"].isna().all():
+    if "Close" not in df:
+        return False
+    if df["Close"].isna().all():
         return False
     close = df["Close"].dropna()
     if len(close) < 15:
@@ -68,7 +70,7 @@ symbols = get_all_nse_stocks()
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):  # Limit to 50 per cycle
+for i, symbol in enumerate(symbols[:50]):  # Limit to 50 per run
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
@@ -102,7 +104,7 @@ if results:
 else:
     st.warning("🚫 No volume spike stocks found today.")
 
-# Option Chain
+# Option Chain Demo
 st.markdown("### 🔍 Options Chain (INFY - demo)")
 chain = fetch_option_chain("INFY")
 calls_df, puts_df = parse_oi_greeks(chain)
