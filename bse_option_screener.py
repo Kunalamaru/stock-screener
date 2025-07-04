@@ -7,7 +7,7 @@ import plotly.express as px
 from ta.momentum import RSIIndicator
 from modules.option_chain import fetch_option_chain, parse_oi_greeks
 
-st.set_page_config(page_title="📈 Volume Spike + RSI Chart", layout="wide")
+st.set_page_config(page_title="📈 Volume Spike + RSI Screener", layout="wide")
 REFRESH_INTERVAL = 5
 
 @st.cache_data(ttl=86400)
@@ -36,11 +36,18 @@ def fetch_price_data(ticker):
 def analyze_stock(df):
     if df is None or len(df) < 20:
         return False
+    if "Close" not in df or df["Close"].isna().all():
+        return False
+    close = df["Close"].dropna()
+    if len(close) < 15:
+        return False
     volume = df["Volume"]
-    close = df["Close"]
     avg_vol_10d = volume.rolling(window=10).mean()
     vol_spike = volume.iloc[-1] > 1.5 * avg_vol_10d.iloc[-1]
-    rsi = RSIIndicator(close, window=14).rsi().iloc[-1]
+    try:
+        rsi = RSIIndicator(close, window=14).rsi().iloc[-1]
+    except:
+        return False
     if vol_spike:
         return {
             "Last Price": close.iloc[-1],
@@ -61,7 +68,7 @@ symbols = get_all_nse_stocks()
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):  # Limit to 50 per run for performance
+for i, symbol in enumerate(symbols[:50]):  # Limit to 50 per cycle
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
@@ -81,20 +88,21 @@ if results:
     st.success(f"✅ {len(df_results)} stocks found with volume spike and RSI info")
     st.dataframe(df_results, use_container_width=True)
 
-    st.markdown("### 📈 Volume Spike Chart")
+    # Chart
+    st.markdown("### 📈 Volume Spike vs RSI Chart")
     fig = px.bar(df_results,
                  x="Symbol", y="Spike Ratio",
                  color="RSI",
                  text="RSI",
-                 title="Volume Spike vs RSI (low RSI = more oversold)",
+                 title="Volume Spike vs RSI (lower RSI = more oversold)",
                  color_continuous_scale="Blues_r")
     fig.update_traces(textposition="outside")
     fig.update_layout(xaxis_tickangle=-45, height=600)
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.warning("🚫 No stocks met the volume spike filter.")
+    st.warning("🚫 No volume spike stocks found today.")
 
-# Demo Option Chain
+# Option Chain
 st.markdown("### 🔍 Options Chain (INFY - demo)")
 chain = fetch_option_chain("INFY")
 calls_df, puts_df = parse_oi_greeks(chain)
