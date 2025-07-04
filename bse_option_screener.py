@@ -7,7 +7,7 @@ import plotly.express as px
 from ta.momentum import RSIIndicator
 from modules.option_chain import fetch_option_chain, parse_oi_greeks
 
-st.set_page_config(page_title="📈 Volume Spike + RSI Screener", layout="wide")
+st.set_page_config(page_title="📈 Volume Jump > 20% (vs yesterday)", layout="wide")
 REFRESH_INTERVAL = 30  # refresh every 30 seconds
 
 @st.cache_data(ttl=86400)
@@ -34,18 +34,19 @@ def fetch_price_data(ticker):
         return None
 
 def analyze_stock(df):
-    if df is None or len(df) < 20:
+    if df is None or len(df) < 3:
         return False
 
     close = df.get("Close", pd.Series(dtype=float)).dropna()
     volume = df.get("Volume", pd.Series(dtype=float)).dropna()
 
-    if len(close) < 15 or len(volume) < 15:
+    if len(close) < 3 or len(volume) < 3:
         return False
 
     try:
-        avg_vol_10d = volume.rolling(window=10).mean()
-        vol_spike = volume.iloc[-1] > 1.2 * avg_vol_10d.iloc[-1]  # Only 20% higher now
+        today_vol = volume.iloc[-1]
+        yest_vol = volume.iloc[-2]
+        vol_spike = today_vol > 1.2 * yest_vol
         rsi = RSIIndicator(close, window=14).rsi().iloc[-1]
     except Exception:
         return False
@@ -53,24 +54,24 @@ def analyze_stock(df):
     if vol_spike:
         return {
             "Last Price": close.iloc[-1],
-            "Volume": volume.iloc[-1],
-            "Avg Vol (10D)": round(avg_vol_10d.iloc[-1], 0),
-            "Vol Spike Ratio": round(volume.iloc[-1] / avg_vol_10d.iloc[-1], 2),
+            "Volume": today_vol,
+            "Prev Day Vol": yest_vol,
+            "Vol Jump %": round((today_vol - yest_vol) / yest_vol * 100, 2),
             "RSI": round(rsi, 2)
         }
     else:
         return False
 
 # UI
-st.title("📊 NSE Screener — Volume Spike + RSI Ranking")
-st.caption("Volume spike: > 20% above 10-day avg | Refreshes every 30 seconds")
-st.markdown("🔁 Now scanning 50 top NSE stocks...")
+st.title("📊 NSE Screener — Volume > 20% Jump vs Yesterday")
+st.caption("Live data via Yahoo Finance | Top NIFTY 100 stocks")
+st.markdown("🔁 Auto-refreshes every 30 seconds")
 
 symbols = get_all_nse_stocks()
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):  # Scan 50 stocks for performance
+for i, symbol in enumerate(symbols[:50]):  # Limit to 50 per run
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
@@ -78,31 +79,31 @@ for i, symbol in enumerate(symbols[:50]):  # Scan 50 stocks for performance
             "Symbol": symbol.replace(".NS", ""),
             "Last Price": result["Last Price"],
             "Volume": result["Volume"],
-            "10-Day Avg": result["Avg Vol (10D)"],
-            "Spike Ratio": result["Vol Spike Ratio"],
+            "Prev Day Vol": result["Prev Day Vol"],
+            "Jump %": result["Vol Jump %"],
             "RSI": result["RSI"]
         })
     progress.progress((i + 1) / 50)
 
 if results:
     df_results = pd.DataFrame(results)
-    df_results.sort_values(by=["Spike Ratio", "RSI"], ascending=[False, True], inplace=True)
-    st.success(f"✅ {len(df_results)} stocks found with volume spike and RSI info")
+    df_results.sort_values(by=["Jump %", "RSI"], ascending=[False, True], inplace=True)
+    st.success(f"✅ {len(df_results)} stocks with volume >20% jump over yesterday")
     st.dataframe(df_results, use_container_width=True)
 
     # Chart
-    st.markdown("### 📈 Volume Spike vs RSI Chart")
+    st.markdown("### 📈 Volume Jump % vs RSI Chart")
     fig = px.bar(df_results,
-                 x="Symbol", y="Spike Ratio",
+                 x="Symbol", y="Jump %",
                  color="RSI",
                  text="RSI",
-                 title="Volume Spike vs RSI (lower RSI = more oversold)",
+                 title="Volume % Jump vs RSI (lower RSI = more oversold)",
                  color_continuous_scale="Blues_r")
     fig.update_traces(textposition="outside")
     fig.update_layout(xaxis_tickangle=-45, height=600)
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.warning("🚫 No volume spike stocks found today.")
+    st.warning("🚫 No stocks found with >20% volume jump vs previous day.")
 
 # Option Chain Demo
 st.markdown("### 🔍 Options Chain (INFY - demo)")
