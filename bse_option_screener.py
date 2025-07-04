@@ -4,21 +4,36 @@ import numpy as np
 import yfinance as yf
 import time
 import plotly.express as px
+import requests
+from io import StringIO
 from ta.momentum import RSIIndicator
 from modules.option_chain import fetch_option_chain, parse_oi_greeks
 
 st.set_page_config(page_title="📈 Volume Spike + RSI Chart", layout="wide")
-REFRESH_INTERVAL = 30
+REFRESH_INTERVAL = 5
 
 @st.cache_data(ttl=3600)
 def get_all_nse_stocks():
     url = "https://www1.nseindia.com/content/equities/EQUITY_L.csv"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://www1.nseindia.com/"
+    }
+
     try:
-        df = pd.read_csv(url)
-        symbols = df["SYMBOL"].dropna().unique()
-        return [symbol.strip() + ".NS" for symbol in symbols]
+        session = requests.Session()
+        response = session.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            csv_data = StringIO(response.text)
+            df = pd.read_csv(csv_data)
+            symbols = df["SYMBOL"].dropna().unique()
+            return [symbol.strip() + ".NS" for symbol in symbols]
+        else:
+            st.error("❌ NSE site blocked the request or is temporarily unavailable.")
+            return []
     except Exception as e:
-        st.error(f"❌ Could not load NSE symbols: {e}")
+        st.error(f"⚠️ Error loading NSE symbols: {e}")
         return []
 
 def fetch_price_data(ticker):
@@ -56,7 +71,7 @@ symbols = get_all_nse_stocks()
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):
+for i, symbol in enumerate(symbols[:50]):  # Limit to 50 symbols for performance
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
