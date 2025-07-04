@@ -4,37 +4,27 @@ import numpy as np
 import yfinance as yf
 import time
 import plotly.express as px
-import requests
-from io import StringIO
 from ta.momentum import RSIIndicator
 from modules.option_chain import fetch_option_chain, parse_oi_greeks
 
 st.set_page_config(page_title="📈 Volume Spike + RSI Chart", layout="wide")
 REFRESH_INTERVAL = 5
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def get_all_nse_stocks():
-    url = "https://www1.nseindia.com/content/equities/EQUITY_L.csv"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Referer": "https://www1.nseindia.com/"
-    }
-
-    try:
-        session = requests.Session()
-        response = session.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            csv_data = StringIO(response.text)
-            df = pd.read_csv(csv_data)
-            symbols = df["SYMBOL"].dropna().unique()
-            return [symbol.strip() + ".NS" for symbol in symbols]
-        else:
-            st.error("❌ NSE site blocked the request or is temporarily unavailable.")
-            return []
-    except Exception as e:
-        st.error(f"⚠️ Error loading NSE symbols: {e}")
-        return []
+    nifty_100_symbols = [
+        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "LT", "KOTAKBANK",
+        "HINDUNILVR", "SBIN", "BHARTIARTL", "ITC", "ASIANPAINT", "MARUTI",
+        "SUNPHARMA", "BAJFINANCE", "BAJAJFINSV", "AXISBANK", "WIPRO",
+        "TITAN", "ULTRACEMCO", "ONGC", "NTPC", "POWERGRID", "COALINDIA",
+        "HCLTECH", "TECHM", "NESTLEIND", "TATAMOTORS", "TATASTEEL", "ADANIENT",
+        "ADANIPORTS", "JSWSTEEL", "HDFCLIFE", "SBILIFE", "DIVISLAB", "CIPLA",
+        "DRREDDY", "ICICIPRULI", "HINDALCO", "BAJAJ-AUTO", "HEROMOTOCO",
+        "EICHERMOT", "GRASIM", "BRITANNIA", "M&M", "BPCL", "INDUSINDBK",
+        "SHREECEM", "IOC", "UPL", "SIEMENS", "GAIL", "PIDILITIND", "AMBUJACEM",
+        "DABUR", "BIOCON", "LUPIN", "TRENT", "COLPAL", "DMART", "TORNTPHARM"
+    ]
+    return [symbol + ".NS" for symbol in nifty_100_symbols]
 
 def fetch_price_data(ticker):
     try:
@@ -64,14 +54,14 @@ def analyze_stock(df):
 
 # UI
 st.title("📊 NSE Screener — Volume Spike + RSI Ranking")
-st.caption("Sorts stocks by volume spike (high to low) and RSI (low to high)")
-st.markdown("🔁 Refreshes every 5 seconds...")
+st.caption("Live data via Yahoo Finance | Top NIFTY 100 stocks")
+st.markdown("🔁 Auto-refreshes every 5 seconds")
 
 symbols = get_all_nse_stocks()
 results = []
 
 progress = st.progress(0)
-for i, symbol in enumerate(symbols[:50]):  # Limit to 50 symbols for performance
+for i, symbol in enumerate(symbols[:50]):  # Limit to 50 per run for performance
     df = fetch_price_data(symbol)
     result = analyze_stock(df)
     if result:
@@ -88,24 +78,23 @@ for i, symbol in enumerate(symbols[:50]):  # Limit to 50 symbols for performance
 if results:
     df_results = pd.DataFrame(results)
     df_results.sort_values(by=["Spike Ratio", "RSI"], ascending=[False, True], inplace=True)
-    st.success(f"✅ {len(df_results)} stocks with volume spike and RSI rankings")
+    st.success(f"✅ {len(df_results)} stocks found with volume spike and RSI info")
     st.dataframe(df_results, use_container_width=True)
 
-    # Chart
-    st.markdown("### 📈 Volume Spike vs RSI Chart")
+    st.markdown("### 📈 Volume Spike Chart")
     fig = px.bar(df_results,
                  x="Symbol", y="Spike Ratio",
                  color="RSI",
                  text="RSI",
-                 title="Volume Spike vs RSI (lower RSI = more oversold)",
+                 title="Volume Spike vs RSI (low RSI = more oversold)",
                  color_continuous_scale="Blues_r")
     fig.update_traces(textposition="outside")
     fig.update_layout(xaxis_tickangle=-45, height=600)
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.warning("🚫 No volume spike stocks found today.")
+    st.warning("🚫 No stocks met the volume spike filter.")
 
-# Optional: Show Option Chain
+# Demo Option Chain
 st.markdown("### 🔍 Options Chain (INFY - demo)")
 chain = fetch_option_chain("INFY")
 calls_df, puts_df = parse_oi_greeks(chain)
