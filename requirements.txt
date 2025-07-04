@@ -4,4 +4,4 @@ pandas
 numpy
 ta
 requests
-potly
+plotly
